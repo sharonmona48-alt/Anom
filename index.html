@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Anom reads your books aloud and highlights every word as it is spoken.">
+<title>Anom</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&display=swap">
+<style>
+/* Layout: one calm reading column; a live "voice aura" glows along the bottom edge under a floating player dock */
+:root{
+  --bg:#F5F6FA; --surface:#FFFFFF; --ink:#1B1D2C; --muted:#6A6E88; --line:#E2E4EE;
+  --accent:#5552E8; --accent2:#12A9BE; --glow:#D85FCB;
+  --read:#9A9DB4; --sent:rgba(85,82,232,.08); --dock:rgba(255,255,255,.82);
+  --f-ui:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --f-read:"Literata",Georgia,"Noto Serif Tamil",serif;
+  --read-size:clamp(18px,1.1vw + 13px,22px);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0C0D15; --surface:#151724; --ink:#E7E8F2; --muted:#8C8FA9; --line:#262A40;
+  --accent:#8D8BFF; --accent2:#3CD3E3; --glow:#EE86E2;
+  --read:#5D6080; --sent:rgba(141,139,255,.10); --dock:rgba(21,23,36,.78); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C0D15; --surface:#151724; --ink:#E7E8F2; --muted:#8C8FA9; --line:#262A40;
+  --accent:#8D8BFF; --accent2:#3CD3E3; --glow:#EE86E2;
+  --read:#5D6080; --sent:rgba(141,139,255,.10); --dock:rgba(21,23,36,.78); color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+
+/* Top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);
+  display:flex;align-items:center;gap:14px;padding-block:14px;border-bottom:1px solid var(--line);
+  max-width:1100px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:20px;letter-spacing:-.02em}
+.mark{width:22px;height:22px;border-radius:50%;
+  background:conic-gradient(from 200deg,var(--accent),var(--accent2),var(--glow),var(--accent));
+  box-shadow:0 0 14px color-mix(in srgb,var(--accent) 50%,transparent)}
+.bookmeta{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25;padding-left:14px;border-left:1px solid var(--line)}
+.bookmeta b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bookmeta span{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);
+  padding:8px 13px;border-radius:999px;cursor:pointer;font-weight:600;font-size:14px;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn svg{width:16px;height:16px}
+@media (max-width:560px){.btn .lbl{display:none}.bookmeta{padding-left:10px}.brand span{display:none}}
+
+/* Reading column */
+main{max-width:1100px;margin:0 auto}
+#book{max-width:66ch;margin:0 auto;padding-block:40px 260px;font-family:var(--f-read);font-size:var(--read-size);line-height:1.75}
+#book h2{font-family:var(--f-ui);font-weight:700;font-size:1.45em;line-height:1.2;letter-spacing:-.015em;
+  text-wrap:balance;margin:1.8em 0 .7em}
+#book h2:first-child{margin-top:0}
+#book p{margin:0 0 1.05em;content-visibility:auto;contain-intrinsic-size:auto 6em}
+.tag{display:inline-block;font-family:var(--f-ui);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);padding:3px 9px;border-radius:999px;margin-bottom:18px}
+.w{cursor:pointer;border-radius:5px;transition:color .25s}
+.w:hover{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:4px}
+.w.cs{background:var(--sent)}
+.w.read{color:var(--read)}
+.w.now{color:#fff;background:linear-gradient(100deg,var(--accent),var(--accent2));
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent),0 6px 18px -6px var(--accent);
+  -webkit-box-decoration-break:clone;box-decoration-break:clone;padding:0 2px;margin:0 -2px}
+
+/* Drop overlay and loading */
+#drop{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 85%,transparent);
+  backdrop-filter:blur(6px)}
+#drop div{border:2px dashed var(--accent);border-radius:24px;padding:48px 36px;text-align:center;max-width:90vw}
+#drop b{display:block;font-size:22px;margin-bottom:6px}
+#drop span,#loading span{color:var(--muted)}
+#loading{position:fixed;inset:0;z-index:41;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 88%,transparent)}
+#loading div{text-align:center}
+#loading b{display:block;font-size:18px;margin:14px 0 4px}
+.spin{width:44px;height:44px;margin:0 auto;border-radius:50%;
+  background:conic-gradient(var(--accent),var(--accent2),var(--glow),transparent 75%);
+  -webkit-mask:radial-gradient(circle,transparent 55%,#000 57%);mask:radial-gradient(circle,transparent 55%,#000 57%);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(1turn)}}
+
+/* Contents drawer */
+#toc{position:fixed;z-index:30;top:0;right:0;bottom:0;width:min(360px,88vw);background:var(--surface);border-left:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top,0px) + 18px) max(18px,env(safe-area-inset-right,0px)) 18px 18px;overflow:auto;box-shadow:-20px 0 50px -30px rgba(0,0,0,.4)}
+#toc header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+#toc h3{margin:0;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+#toc li button{width:100%;text-align:left;background:none;border:0;padding:10px 12px;border-radius:10px;cursor:pointer;display:flex;gap:10px}
+#toc li button:hover{background:var(--sent)}
+#toc li button.on{background:var(--sent);color:var(--accent);font-weight:600}
+#toc li small{color:var(--muted);font-variant-numeric:tabular-nums;min-width:2ch}
+#toc p{color:var(--muted)}
+
+/* Voice aura + dock */
+#aura{position:fixed;left:0;right:0;bottom:0;width:100%;height:240px;pointer-events:none;z-index:1}
+.dock{position:fixed;z-index:6;left:50%;transform:translateX(-50%);
+  bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(780px,calc(100% - 2*max(16px,env(safe-area-inset-left,0px))));
+  background:var(--dock);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);
+  border:1px solid var(--line);border-radius:22px;padding:12px 16px 14px;display:flex;flex-direction:column;gap:10px;
+  box-shadow:0 20px 50px -24px rgba(20,20,60,.45)}
+.prog{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.prog input{flex:1;min-width:0;accent-color:var(--accent);height:4px}
+.row{display:flex;align-items:center;gap:12px}
+.status{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.status b{font-size:14px;display:flex;align-items:center;gap:8px}
+.status span{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.live .dot{background:var(--accent2);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent2) 25%,transparent);animation:pl 1.4s ease-in-out infinite}
+@keyframes pl{50%{box-shadow:0 0 0 7px transparent}}
+.ctrls{display:flex;align-items:center;gap:6px}
+.ib{width:40px;height:40px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
+.ib:hover{background:var(--sent)}
+.ib svg{width:20px;height:20px}
+.play{width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;display:grid;place-items:center;color:#fff;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 8px 24px -8px var(--accent)}
+.play svg{width:24px;height:24px}
+.opts{flex:1;display:flex;justify-content:flex-end;gap:8px;min-width:0}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-weight:600;font-size:13px;cursor:pointer;font-variant-numeric:tabular-nums}
+select.chip{max-width:170px;text-overflow:ellipsis}
+@media (max-width:640px){
+  .row{flex-wrap:wrap}
+  .status{flex-basis:100%;order:-1}
+  .ctrls{flex:1;justify-content:flex-start}
+  .opts{flex:0 1 auto}
+  select.chip{max-width:120px}
+}
+#back{position:fixed;z-index:7;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+#note{position:fixed;z-index:8;left:50%;transform:translateX(-50%);top:calc(80px + env(safe-area-inset-top,0px));
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;max-width:90vw}
+@media (prefers-reduced-motion:reduce){.w{transition:none}.live .dot{animation:none}}
+</style>
+<style>body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<header class="top">
+  <div class="brand"><i class="mark"></i><span>Anom</span></div>
+  <div class="bookmeta"><b id="bTitle">Welcome to Anom</b><span id="bInfo">Sample book</span></div>
+  <button class="btn" id="tocBtn" aria-label="Contents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Contents</span></button>
+  <label class="btn primary" for="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M5 20h14"/></svg><span class="lbl">Open book</span></label>
+  <input type="file" id="file" accept=".pdf,.docx,.epub,.txt,.md,text/plain" hidden>
+</header>
+
+<main><article id="book" aria-live="off"></article></main>
+
+<aside id="toc" hidden>
+  <header><h3>Contents</h3><button class="ib" id="tocClose" aria-label="Close contents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+  <ol id="tocList"></ol>
+</aside>
+
+<div id="drop" hidden><div><b>Drop your book here</b><span>PDF, Word (.docx), EPUB or plain text</span></div></div>
+<div id="loading" hidden><div><i class="spin"></i><b id="loadMsg">Opening your book</b><span id="loadSub">This takes a moment for long books</span></div></div>
+<div id="note" hidden></div>
+<button class="btn" id="back" hidden>Back to reading position</button>
+
+<canvas id="aura" aria-hidden="true"></canvas>
+<section class="dock" aria-label="Player">
+  <div class="prog"><span id="pPct">0%</span><input type="range" id="seek" min="0" max="0" value="0" aria-label="Position in book"><span id="pLeft">0 min left</span></div>
+  <div class="row">
+    <div class="status" id="status"><b><i class="dot"></i><span id="sTitle">Ready to read</span></b><span id="sSub">Press play, or tap any word to start there</span></div>
+    <div class="ctrls">
+      <button class="ib" id="prev" aria-label="Previous sentence"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9.5 12z"/></svg></button>
+      <button class="play" id="play" aria-label="Play"><svg id="icPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><svg id="icPause" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+      <button class="ib" id="next" aria-label="Next sentence"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l10.5-7z"/></svg></button>
+    </div>
+    <div class="opts">
+      <button class="chip" id="rate" aria-label="Reading speed">1×</button>
+      <select class="chip" id="voice" aria-label="Voice"><option>Loading voices…</option></select>
+    </div>
+  </div>
+</section>
+
+<script>
+(()=>{
+const $=s=>document.querySelector(s);
+const synth=window.speechSynthesis;
+const store={get(k){try{return JSON.parse(localStorage.getItem('anom.'+k))}catch(e){return null}},
+  set(k,v){try{localStorage.setItem('anom.'+k,JSON.stringify(v));return true}catch(e){return false}}};
+
+/* ---------- Sample book ---------- */
+const SAMPLE={title:'Welcome to Anom',sample:true,blocks:[
+ {t:'h',x:'Chapter 1. How Anom reads to you'},
+ {t:'p',x:'Anom turns any book into a live reading. Press the play button below and listen. Each word lights up the moment it is spoken, so your eyes and ears stay on the same line.'},
+ {t:'p',x:'Tap any word on the page and Anom starts reading from exactly that spot. Use the arrows to step back or skip ahead one sentence at a time. The speed button changes how fast the voice reads, from slow and careful to quick.'},
+ {t:'h',x:'Chapter 2. Bring your own book'},
+ {t:'p',x:'Press Open book at the top, or drop a file anywhere on this page. Anom understands PDF files, Word documents, EPUB books and plain text. Chapters it finds appear under Contents, so you can jump straight to the part you want.'},
+ {t:'p',x:'Anom remembers where you stopped. Close the page today, come back tomorrow, and the reading picks up from the same word.'},
+ {t:'h',x:'Chapter 3. Choosing a voice'},
+ {t:'p',x:'Pick a voice from the list in the player. The voices come from your own device, so phones and computers offer different ones. If your book is in Tamil and your device has a Tamil voice, Anom picks it for you.'},
+ {t:'p',x:'Like a seed that waits in good soil, a book waits for its reader. Anom simply gives it a voice.'}
+]};
+
+/* ---------- State ---------- */
+let book=null, words=[], sents=[], heads=[], wordEls=[];
+let cursor=0, readUpTo=0, curSent=-1, playing=false, token=0, estTimer=null;
+let rate=store.get('rate2')||1.3, voices=[], voice=null, userScrollAt=0;
+const RATES=[0.9,1.1,1.3,1.5,1.75,2];
+
+/* ---------- Parsing helpers ---------- */
+const HEAD_RE=/^(chapter|part|book|prologue|epilogue|preface|introduction|foreword|afterword|contents|அத்தியாயம்|பகுதி)\b/i;
+function textToBlocks(text){
+  text=text.replace(/\r\n?/g,'\n').replace(/\u00a0/g,' ');
+  let parts=text.split(/\n\s*\n/);
+  if(parts.length<3) parts=text.split(/\n/);
+  const out=[];
+  for(let p of parts){
+    p=p.replace(/\s*\n\s*/g,' ').trim(); if(!p) continue;
+    const md=p.match(/^#{1,6}\s+(.*)/);
+    if(md){out.push({t:'h',x:md[1]});continue}
+    const isHead=p.length<80&&!/[.,;:!?"”’]$/.test(p)&&(HEAD_RE.test(p)||(p===p.toUpperCase()&&/[A-Z]/.test(p)&&p.split(' ').length<9));
+    out.push({t:isHead?'h':'p',x:p});
+  }
+  return out;
+}
+function htmlToBlocks(doc){
+  const out=[];
+  doc.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote>div').forEach(el=>{
+    if(el.closest('li')&&el.tagName==='P') return;
+    const x=el.textContent.replace(/\s+/g,' ').trim(); if(!x) return;
+    out.push({t:/^H\d/.test(el.tagName)?'h':'p',x});
+  });
+  return out;
+}
+const loaded={};
+function loadScript(src){return loaded[src]||(loaded[src]=new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('Could not load a reader component. Check your connection and try again.'));document.head.appendChild(s)}))}
+const CDN='https://cdnjs.cloudflare.com/ajax/libs/';
+
+async function parseFile(file){
+  const name=file.name, ext=name.split('.').pop().toLowerCase();
+  const title=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
+  if(ext==='txt'||ext==='md'||file.type==='text/plain') return {title,blocks:textToBlocks(await file.text())};
+  const buf=await file.arrayBuffer();
+  if(ext==='docx'){
+    await loadScript(CDN+'mammoth/1.6.0/mammoth.browser.min.js');
+    const r=await mammoth.convertToHtml({arrayBuffer:buf});
+    return {title,blocks:htmlToBlocks(new DOMParser().parseFromString(r.value,'text/html'))};
+  }
+  if(ext==='epub'){
+    await loadScript(CDN+'jszip/3.10.1/jszip.min.js');
+    const zip=await JSZip.loadAsync(buf);
+    const cont=new DOMParser().parseFromString(await zip.file('META-INF/container.xml').async('string'),'application/xml');
+    const opfPath=cont.querySelector('rootfile').getAttribute('full-path');
+    const base=opfPath.includes('/')?opfPath.replace(/[^/]+$/,''):'';
+    const opf=new DOMParser().parseFromString(await zip.file(opfPath).async('string'),'application/xml');
+    const t=opf.getElementsByTagName('dc:title')[0];
+    const man={}; opf.querySelectorAll('manifest>item').forEach(i=>man[i.getAttribute('id')]=i.getAttribute('href'));
+    const blocks=[]; const spine=[...opf.querySelectorAll('spine>itemref')];
+    for(let k=0;k<spine.length;k++){
+      setLoad('Reading section '+(k+1)+' of '+spine.length);
+      const href=man[spine[k].getAttribute('idref')]; if(!href) continue;
+      const path=decodeURIComponent((base+href).replace(/#.*/,''));
+      const f=zip.file(path); if(!f) continue;
+      blocks.push(...htmlToBlocks(new DOMParser().parseFromString(await f.async('string'),'text/html')));
+    }
+    return {title:t?t.textContent.trim():title,blocks};
+  }
+  if(ext==='pdf'){
+    await loadScript(CDN+'pdf.js/3.11.174/pdf.min.js');
+    await loadScript(CDN+'pdf.js/3.11.174/pdf.worker.min.js');
+    pdfjsLib.GlobalWorkerOptions.workerSrc=CDN+'pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let meta=null; try{meta=(await pdf.getMetadata()).info}catch(e){}
+    const paras=[];
+    for(let n=1;n<=pdf.numPages;n++){
+      setLoad('Reading page '+n+' of '+pdf.numPages);
+      const page=await pdf.getPage(n); const tc=await page.getTextContent();
+      const lines=[]; let cur=null;
+      for(const it of tc.items){
+        if(!it.str) continue;
+        const y=it.transform[5];
+        if(!cur||Math.abs(y-cur.y)>2){cur={y,h:it.height||10,x:''};lines.push(cur)}
+        cur.x+=it.str;
+      }
+      let para=null, prev=null, first=true;
+      for(const l of lines){
+        const s=l.x.replace(/\s+/g,' ').trim();
+        if(!s||/^\d{1,4}$/.test(s)){continue}
+        const gap=prev?prev.y-l.y:0;
+        if(!para||gap>prev.h*1.65||gap<0){
+          // continue a paragraph split across pages
+          if(first&&paras.length&&!/[.!?"”’:]$/.test(paras[paras.length-1])&&/^[a-z]/.test(s)){para={i:paras.length-1}}
+          else{paras.push('');para={i:paras.length-1}}
+        }
+        const cur2=paras[para.i];
+        paras[para.i]=cur2?(cur2.endsWith('-')?cur2.slice(0,-1)+s:cur2+' '+s):s;
+        prev=l; first=false;
+      }
+    }
+    const blocks=paras.map(x=>x.trim()).filter(Boolean).map(x=>{
+      const h=x.length<80&&!/[.,;:!?"”’]$/.test(x)&&(HEAD_RE.test(x)||(x===x.toUpperCase()&&/[A-Z]/.test(x)&&x.split(' ').length<9));
+      return {t:h?'h':'p',x};
+    });
+    return {title:(meta&&meta.Title&&meta.Title.trim())||title,blocks};
+  }
+  throw new Error('Anom reads PDF, Word (.docx), EPUB and text files. "'+name+'" is a different type.');
+}
+
+/* ---------- Building the page ---------- */
+const ABBR=/^(mr|mrs|ms|dr|st|jr|sr|vs|etc|prof|no|fig|e\.g|i\.e)\.$/i;
+function build(b){
+  book=b; words=[]; sents=[]; heads=[];
+  const art=$('#book'); art.textContent='';
+  const frag=document.createDocumentFragment();
+  if(b.sample){const t=document.createElement('div');t.className='tag';t.textContent='Sample book · open your own anytime';frag.appendChild(t)}
+  let chapter=b.title;
+  b.blocks.forEach(bl=>{
+    const el=document.createElement(bl.t==='h'?'h2':'p');
+    if(bl.t==='h'){chapter=bl.x;heads.push({title:bl.x,word:words.length,el})}
+    const toks=bl.x.split(/\s+/).filter(Boolean);
+    let sStart=words.length;
+    toks.forEach((tk,k)=>{
+      const i=words.length;
+      const sp=document.createElement('span');sp.className='w';sp.dataset.i=i;sp.textContent=tk;
+      el.appendChild(sp); if(k<toks.length-1) el.appendChild(document.createTextNode(' '));
+      words.push({x:tk,s:sents.length});
+      const len=i-sStart+1, last=k===toks.length-1;
+      const ends=(/[.!?…।]+["'”’»)\]]*$/.test(tk)&&!ABBR.test(tk))||(len>=40&&/[,;:—–]$/.test(tk))||len>=70||last;
+      if(ends){sents.push({s:sStart,e:i,ch:chapter});sStart=i+1}
+    });
+    frag.appendChild(el);
+  });
+  art.appendChild(frag);
+  wordEls=art.getElementsByClassName('w');
+  const mins=Math.max(1,Math.round(words.length/165));
+  $('#bTitle').textContent=b.title;
+  $('#bInfo').textContent=(b.sample?'Sample · ':'')+words.length.toLocaleString()+' words · about '+fmtMin(mins)+' listening';
+  $('#seek').max=Math.max(0,words.length-1);
+  renderToc(); pickVoiceForBook();
+  readUpTo=0; curSent=-1;
+  const saved=store.get('pos.'+bookKey());
+  setWord(saved&&saved<words.length?saved:0,true);
+  if(saved>0){scrollToWord(cursor,true);note('Picked up where you stopped')}
+  else window.scrollTo(0,0);
+}
+const bookKey=()=>book.title+'|'+words.length;
+const fmtMin=m=>m<60?m+' min':Math.floor(m/60)+' h '+(m%60)+' min';
+
+function renderToc(){
+  const ol=$('#tocList'); ol.textContent='';
+  if(!heads.length){ol.innerHTML='<p>No chapters found in this book. Anom will read it straight through.</p>';return}
+  heads.forEach((h,k)=>{
+    const li=document.createElement('li'),bt=document.createElement('button');
+    bt.innerHTML='<small>'+(k+1)+'</small><span></span>';bt.lastChild.textContent=h.title;
+    bt.onclick=()=>{const was=playing;stop();setWord(h.word,true);scrollToWord(h.word,true);closeToc();if(was)play()};
+    li.appendChild(bt);ol.appendChild(li);
+  });
+}
+
+/* ---------- Highlighting ---------- */
+function setWord(i,jump){
+  if(!words.length) return;
+  i=Math.max(0,Math.min(words.length-1,i));
+  const old=wordEls[cursor]; if(old) old.classList.remove('now');
+  // read marks
+  if(i>readUpTo){for(let k=readUpTo;k<i;k++)wordEls[k].classList.add('read')}
+  else if(i<readUpTo){for(let k=i;k<readUpTo;k++)wordEls[k].classList.remove('read')}
+  readUpTo=i;
+  const si=words[i].s;
+  if(si!==curSent){
+    if(curSent>=0){const o=sents[curSent];for(let k=o.s;k<=o.e;k++)wordEls[k].classList.remove('cs')}
+    const n=sents[si];for(let k=n.s;k<=n.e;k++)wordEls[k].classList.add('cs');
+    curSent=si;
+  }
+  cursor=i; wordEls[i].classList.add('now');
+  // progress
+  $('#seek').value=i;
+  const pct=words.length>1?Math.round(i/(words.length-1)*100):0;
+  $('#pPct').textContent=pct+'%';
+  $('#pLeft').textContent=fmtMin(Math.max(0,Math.round((words.length-i)/(165*rate))))+' left';
+  if(playing) $('#sSub').textContent=sents[si].ch;
+  if(!jump) follow(i);
+  if(i%25===0||jump) store.set('pos.'+bookKey(),i);
+  // toc active
+  let a=-1; for(let k=0;k<heads.length;k++){if(heads[k].word<=i)a=k;else break}
+  document.querySelectorAll('#tocList button').forEach((b,k)=>b.classList.toggle('on',k===a));
+}
+function follow(i){
+  const el=wordEls[i]; const r=el.getBoundingClientRect();
+  const dockTop=document.querySelector('.dock').getBoundingClientRect().top;
+  const away=r.bottom<0||r.top>window.innerHeight;
+  if(Date.now()-userScrollAt<4000){ $('#back').hidden=!away; return }
+  if(r.top<110||r.bottom>dockTop-40) scrollToWord(i);
+  $('#back').hidden=true;
+}
+function scrollToWord(i,instant){
+  const el=wordEls[i]; if(!el) return;
+  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  const y=el.getBoundingClientRect().top+window.scrollY-window.innerHeight*0.33;
+  window.scrollTo({top:y,behavior:instant||reduce?'auto':'smooth'});
+}
+['wheel','touchmove'].forEach(e=>addEventListener(e,()=>{userScrollAt=Date.now()},{passive:true}));
+$('#back').onclick=()=>{userScrollAt=0;scrollToWord(cursor);$('#back').hidden=true};
+
+/* ---------- Speech ---------- */
+function speakFrom(wi){
+  if(!synth){note('This browser has no built-in voice. Try Chrome, Edge or Safari.');stop();return}
+  const sen=sents[words[wi].s]; const my=++token;
+  const offs=[]; let text='';
+  for(let k=wi;k<=sen.e;k++){offs.push(text.length);text+=words[k].x+(k<sen.e?' ':'')}
+  const u=new SpeechSynthesisUtterance(text);
+  if(voice){u.voice=voice;u.lang=voice.lang}
+  u.rate=rate;
+  let gotB=false;
+  const startEst=()=>{if(gotB||my!==token) return;let k=cursor-wi;
+    const step=()=>{if(gotB||my!==token||!playing) return;k++;if(wi+k>sen.e) return;setWord(wi+k);pulse();
+      estTimer=setTimeout(step,(words[wi+k].x.length+1)*68/rate+40)};
+    estTimer=setTimeout(step,(words[cursor].x.length+1)*68/rate+40)};
+  u.onstart=()=>{if(my!==token) return;setWord(wi);pulse();clearTimeout(estTimer);estTimer=setTimeout(startEst,420)};
+  u.onboundary=ev=>{if(my!==token) return;if(ev.name&&ev.name!=='word') return;
+    gotB=true;clearTimeout(estTimer);
+    let lo=0,hi=offs.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(offs[m]<=ev.charIndex)lo=m;else hi=m-1}
+    if(wi+lo!==cursor){setWord(wi+lo);pulse()}};
+  u.onend=()=>{if(my!==token) return;clearTimeout(estTimer);if(!playing) return;
+    if(sen.e+1>=words.length){finish();return} speakFrom(sen.e+1)};
+  u.onerror=e=>{if(my!==token) return;if(e.error==='interrupted'||e.error==='canceled') return;
+    clearTimeout(estTimer);stop();note(e.error==='not-allowed'?'Tap play to let Anom speak.':'The voice stopped unexpectedly. Try another voice or press play again.')};
+  synth.speak(u);
+}
+function play(){
+  if(!words.length) return;
+  if(cursor>=words.length-1&&readUpTo>=words.length-1) setWord(0,true);
+  playing=true; synth&&synth.cancel(); setUI();
+  userScrollAt=0; scrollToWord(cursor); speakFrom(cursor);
+}
+function stop(){playing=false;token++;clearTimeout(estTimer);synth&&synth.cancel();setUI()}
+function finish(){stop();$('#sTitle').textContent='Finished';$('#sSub').textContent='You reached the end of '+book.title;store.set('pos.'+bookKey(),0)}
+function setUI(){
+  $('#status').classList.toggle('live',playing);
+  $('#icPlay').hidden=playing;$('#icPause').hidden=!playing;
+  $('#play').setAttribute('aria-label',playing?'Pause':'Play');
+  $('#sTitle').textContent=playing?'Reading aloud':(cursor>0?'Paused':'Ready to read');
+  $('#sSub').textContent=playing?sents[words[cursor].s].ch:(cursor>0?'Press play to continue from the highlighted word':'Press play, or tap any word to start there');
+}
+function jumpSentence(d){
+  const si=words[cursor].s; let t=si+d;
+  if(d<0&&cursor>sents[si].s+1) t=si; // first press goes to sentence start
+  t=Math.max(0,Math.min(sents.length-1,t));
+  const was=playing; if(was){token++;synth.cancel()}
+  setWord(sents[t].s,true); scrollToWord(cursor);
+  if(was){playing=true;speakFrom(cursor)}
+}
+
+/* ---------- Voices ---------- */
+function loadVoices(){
+  voices=(synth?synth.getVoices():[]).slice().sort((a,b)=>a.lang.localeCompare(b.lang)||a.name.localeCompare(b.name));
+  const sel=$('#voice'); sel.textContent='';
+  if(!voices.length){const o=document.createElement('option');o.textContent='Default voice';sel.appendChild(o);return}
+  voices.forEach((v,k)=>{const o=document.createElement('option');o.value=k;o.textContent=v.name.replace(/^(Microsoft|Google)\s+/,'')+' · '+v.lang;sel.appendChild(o)});
+  const saved=store.get('voice');
+  voice=voices.find(v=>v.voiceURI===saved)||null;
+  if(!voice) pickVoiceForBook(true);
+  if(voice) sel.value=voices.indexOf(voice);
+}
+function pickVoiceForBook(force){
+  if(!voices.length) return;
+  const sample=(book?book.blocks.slice(0,30).map(b=>b.x).join(' '):'');
+  const ta=/[\u0B80-\u0BFF]/.test(sample), hi=/[\u0900-\u097F]/.test(sample);
+  const want=ta?'ta':hi?'hi':null;
+  if(want){const v=voices.find(v=>v.lang.toLowerCase().startsWith(want));if(v){voice=v;$('#voice').value=voices.indexOf(v);return}}
+  if(force||!voice){
+    const nav=(navigator.language||'en').toLowerCase();
+    voice=voices.find(v=>v.default&&v.lang.toLowerCase().startsWith('en'))||voices.find(v=>v.lang.toLowerCase()===nav)||voices.find(v=>/^en-(in|gb|us)/i.test(v.lang))||voices.find(v=>v.lang.startsWith('en'))||voices[0];
+    $('#voice').value=voices.indexOf(voice);
+  }
+}
+if(synth){loadVoices();synth.onvoiceschanged=loadVoices}
+$('#voice').onchange=e=>{voice=voices[+e.target.value]||null;if(voice)store.set('voice',voice.voiceURI);if(playing)play()};
+function showRate(){$('#rate').textContent=rate+'×'}
+showRate();
+$('#rate').onclick=()=>{rate=RATES[(RATES.indexOf(rate)+1)%RATES.length];store.set('rate2',rate);showRate();if(playing)play();else setWord(cursor,true)};
+
+/* ---------- Controls ---------- */
+$('#play').onclick=()=>playing?stop():play();
+$('#prev').onclick=()=>jumpSentence(-1);
+$('#next').onclick=()=>jumpSentence(1);
+$('#book').addEventListener('click',e=>{const w=e.target.closest('.w');if(!w) return;
+  const i=+w.dataset.i; token++; synth&&synth.cancel(); setWord(i,true); play()});
+$('#seek').oninput=e=>{const was=playing;if(was){token++;synth.cancel()}setWord(+e.target.value,true);scrollToWord(cursor,true);if(was){playing=true;speakFrom(cursor)}};
+addEventListener('keydown',e=>{
+  if(e.target.closest('input,select,textarea')) return;
+  if(e.code==='Space'){e.preventDefault();playing?stop():play()}
+  else if(e.key==='ArrowRight')jumpSentence(1);
+  else if(e.key==='ArrowLeft')jumpSentence(-1);
+  else if(e.key==='Escape')closeToc();
+});
+const openToc=()=>{$('#toc').hidden=false};
+const closeToc=()=>{$('#toc').hidden=true};
+$('#tocBtn').onclick=()=>$('#toc').hidden?openToc():closeToc();
+$('#tocClose').onclick=closeToc;
+
+/* ---------- Opening files ---------- */
+function setLoad(sub){$('#loadSub').textContent=sub}
+async function openFile(file){
+  if(!file) return;
+  stop(); $('#loading').hidden=false; $('#loadMsg').textContent='Opening '+file.name; setLoad('This takes a moment for long books');
+  try{
+    const b=await parseFile(file);
+    if(!b.blocks.length||!b.blocks.some(x=>x.x.split(' ').length>2)) throw new Error('No readable text was found in this file. Scanned PDFs (photos of pages) have no text layer for Anom to read.');
+    build(b);
+    if(!store.set('book',b)) note('This book is too large to keep after you close the page, but your place is still saved.');
+  }catch(err){note(err.message||'Could not open this file.')}
+  $('#loading').hidden=true;
+}
+$('#file').onchange=e=>{openFile(e.target.files[0]);e.target.value=''};
+let dragN=0;
+addEventListener('dragenter',e=>{if([...e.dataTransfer.types].includes('Files')){dragN++;$('#drop').hidden=false}});
+addEventListener('dragleave',()=>{if(--dragN<=0){dragN=0;$('#drop').hidden=true}});
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{e.preventDefault();dragN=0;$('#drop').hidden=true;openFile(e.dataTransfer.files[0])});
+
+let noteT;
+function note(msg){const n=$('#note');n.textContent=msg;n.hidden=false;clearTimeout(noteT);noteT=setTimeout(()=>n.hidden=true,4200)}
+
+/* ---------- Voice aura ---------- */
+const cv=$('#aura'), cx=cv.getContext('2d');
+let energy=0.15, kick=0, t0=performance.now(), cols=[];
+function readCols(){const cs=getComputedStyle(document.documentElement);cols=['--accent','--accent2','--glow','--accent'].map(v=>cs.getPropertyValue(v).trim())}
+readCols(); matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>setTimeout(readCols,50));
+new MutationObserver(readCols).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+function pulse(){kick=Math.min(1,kick+0.55)}
+function hexA(c,a){if(c.startsWith('#')){let h=c.slice(1);if(h.length===3)h=[...h].map(x=>x+x).join('');const n=parseInt(h,16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`}return c}
+function size(){const d=Math.min(2,devicePixelRatio||1);cv.width=innerWidth*d;cv.height=240*d;cx.setTransform(d,0,0,d,0,0)}
+size(); addEventListener('resize',size);
+const reduceMo=matchMedia('(prefers-reduced-motion:reduce)');
+function frame(now){
+  const t=(now-t0)/1000, W=innerWidth, H=240;
+  const target=playing?0.55+kick*0.45:0.14+0.04*Math.sin(t*1.3);
+  energy+=(target-energy)*(reduceMo.matches?0.03:0.12); kick*=0.9;
+  cx.clearRect(0,0,W,H);
+  const n=4, sp=reduceMo.matches?0.15:1;
+  for(let k=0;k<n;k++){
+    const ph=k*1.7, x=W*(0.15+0.7*(k/(n-1)))+Math.sin(t*0.5*sp+ph)*W*0.08;
+    const rx=W*0.32, ry=(60+150*energy)*(0.75+0.25*Math.sin(t*(1.1+k*0.3)*sp+ph));
+    cx.save();cx.translate(x,H+10);cx.scale(rx/ry,1);
+    const g=cx.createRadialGradient(0,0,0,0,0,ry);
+    const a=0.22+0.38*energy;
+    g.addColorStop(0,hexA(cols[k],a));g.addColorStop(0.55,hexA(cols[k],a*0.35));g.addColorStop(1,hexA(cols[k],0));
+    cx.fillStyle=g;cx.beginPath();cx.arc(0,0,ry,0,Math.PI*2);cx.fill();cx.restore();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- Start ---------- */
+const savedBook=store.get('book');
+build(savedBook&&savedBook.blocks&&savedBook.blocks.length?savedBook:SAMPLE);
+setUI();
+addEventListener('beforeunload',()=>{store.set('pos.'+bookKey(),cursor);synth&&synth.cancel()});
+})();
+</script>
+
+</body>
+</html>
